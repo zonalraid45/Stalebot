@@ -3,14 +3,13 @@ name: Update Stockfish to Latest Build
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 0 * * *'   # Daily at midnight UTC
+    - cron: '0 0 * * *'
 
 permissions:
   contents: write
 
 jobs:
   update-stockfish:
-    name: Download & Push Latest Stockfish
     runs-on: ubuntu-latest
 
     steps:
@@ -24,7 +23,7 @@ jobs:
           curl -L -o stockfish.zip "https://abrok.eu/stockfish/latest/linux/stockfish_x64_avx2.zip"
           unzip -q stockfish.zip
 
-          mkdir -p engines
+          mkdir -p Engine
 
           BIN_PATH=$(find . -type f -executable -name "stockfish_*_x64_avx2" | head -n 1)
 
@@ -33,15 +32,15 @@ jobs:
             exit 1
           fi
 
-          mv "$BIN_PATH" engines/stockfish
-          chmod +x engines/stockfish
+          mv "$BIN_PATH" Engine/stockfish
+          chmod +x Engine/stockfish
 
       - name: Commit & Push if changed
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          git add engines/stockfish
+          git add Engine/stockfish
 
           if git diff --cached --quiet; then
             echo "No changes to commit."
@@ -49,4 +48,4 @@ jobs:
           fi
 
           git commit -m "chore: update to latest Stockfish build"
-          git push
+          git push origin HEAD
