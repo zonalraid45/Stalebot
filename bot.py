@@ -28,6 +28,8 @@ def start():
     for line in api.stream_events().iter_lines():
         if line:
             event = json.loads(line.decode('utf-8'))
+            if "type" not in event:
+                continue
             ch.handle(event)
             if event["type"] == "gameStart":
                 threading.Thread(target=play_game, args=(event["game"]["id"], api, conf["bot_name"], eng)).start()
