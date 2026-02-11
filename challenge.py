@@ -3,5 +3,5 @@ class ChallengeHandler:
         self.api = api
 
     def handle(self, event):
-        if event["type"] == "challenge":
+        if event.get("type") == "challenge":
             self.api.accept_challenge(event["challenge"]["id"])
