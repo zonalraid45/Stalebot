@@ -229,7 +229,11 @@ def start():
     print(f"Bot Name: {conf['bot_name']}")
     api = LichessAPI()
     challenge_conf = conf.get("challenge", {})
-    eng = UCIEngine(conf["engine_path"], movetime_ms=conf.get("move_time_ms", 60))
+    eng = UCIEngine(
+        conf["engine_path"],
+        movetime_ms=conf.get("move_time_ms", 60),
+        uci_options=conf.get("uci_options", {}),
+    )
     max_takebacks = int(challenge_conf.get("max_takebacks", 0))
     active_games = set()
     active_games_lock = threading.Lock()
