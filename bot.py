@@ -135,59 +135,78 @@ def format_result(status, winner):
     return f"Game finished with status: {status}"
 
 
-def play_game(game_id, api, bot_name, engine):
+def play_game(game_id, api, bot_name, engine, max_takebacks, on_game_finish=None):
     print(f"Starting game loop for {game_id}")
     board = initial_board()
     processed_plies = 0
     announced = False
     opponent_name = "unknown"
     bot_is_white = None
+    takebacks_accepted = 0
+    takeback_offer_seen = False
 
-    for line in api.stream_game(game_id).iter_lines():
-        if not line:
-            continue
+    try:
+        for line in api.stream_game(game_id).iter_lines():
+            if not line:
+                continue
 
-        data = json.loads(line.decode("utf-8"))
+            data = json.loads(line.decode("utf-8"))
 
-        if data.get("type") == "gameFull":
-            white = data.get("white", {})
-            black = data.get("black", {})
-            white_id = (white.get("id") or "").lower()
-            black_id = (black.get("id") or "").lower()
-            bot_lower = bot_name.lower()
-            bot_is_white = white_id == bot_lower
-            opponent = black if bot_is_white else white
-            opponent_name = opponent.get("name") or opponent.get("id") or "unknown"
-            announced = True
-            print(f"Game {game_id} ({opponent_name}) started")
+            if data.get("type") == "gameFull":
+                white = data.get("white", {})
+                black = data.get("black", {})
+                white_id = (white.get("id") or "").lower()
+                black_id = (black.get("id") or "").lower()
+                bot_lower = bot_name.lower()
+                bot_is_white = white_id == bot_lower
+                opponent = black if bot_is_white else white
+                opponent_name = opponent.get("name") or opponent.get("id") or "unknown"
+                announced = True
+                print(f"Game {game_id} ({opponent_name}) started")
 
-        state = data.get("state", data)
-        moves = state.get("moves", "").strip()
-        move_list = moves.split() if moves else []
+            state = data.get("state", data)
+            moves = state.get("moves", "").strip()
+            move_list = moves.split() if moves else []
 
-        while processed_plies < len(move_list):
-            uci_move = move_list[processed_plies]
-            ply = processed_plies + 1
-            pretty = uci_to_pretty(uci_move, board)
-            print(f"{ply}.{pretty} | game {game_id} ({opponent_name})")
-            apply_uci_move(board, uci_move)
-            processed_plies += 1
+            if bot_is_white is not None:
+                opponent_takeback_offer = (
+                    state.get("btakeback", False) if bot_is_white else state.get("wtakeback", False)
+                )
+                if opponent_takeback_offer and not takeback_offer_seen:
+                    accept_takeback = takebacks_accepted < max_takebacks
+                    api.respond_takeback(game_id, accept=accept_takeback)
+                    if accept_takeback:
+                        takebacks_accepted += 1
+                    takeback_offer_seen = True
+                elif not opponent_takeback_offer:
+                    takeback_offer_seen = False
 
-        if bot_is_white is None:
-            my_turn = False
-        else:
-            my_turn = (len(move_list) % 2 == 0) if bot_is_white else (len(move_list) % 2 != 0)
+            while processed_plies < len(move_list):
+                uci_move = move_list[processed_plies]
+                ply = processed_plies + 1
+                pretty = uci_to_pretty(uci_move, board)
+                print(f"{ply}.{pretty}     |     game {game_id} ({opponent_name})")
+                apply_uci_move(board, uci_move)
+                processed_plies += 1
 
-        if state.get("status") != "started":
-            result = format_result(state.get("status", "finished"), state.get("winner"))
-            if not announced:
-                print(f"Game {game_id} ({opponent_name})")
-            print(f"Result | game {game_id} ({opponent_name}): {result}")
-            break
+            if bot_is_white is None:
+                my_turn = False
+            else:
+                my_turn = (len(move_list) % 2 == 0) if bot_is_white else (len(move_list) % 2 != 0)
 
-        if my_turn:
-            move = engine.get_best_move(moves)
-            api.make_move(game_id, move)
+            if state.get("status") != "started":
+                result = format_result(state.get("status", "finished"), state.get("winner"))
+                if not announced:
+                    print(f"Game {game_id} ({opponent_name})")
+                print(f"Result: game {game_id} ({opponent_name}): {result}")
+                break
+
+            if my_turn:
+                move = engine.get_best_move(moves)
+                api.make_move(game_id, move)
+    finally:
+        if on_game_finish is not None:
+            on_game_finish(game_id)
 
 
 def start():
@@ -202,8 +221,21 @@ def start():
 
     print(f"Bot Name: {conf['bot_name']}")
     api = LichessAPI()
-    ch = ChallengeHandler(api)
-    eng = UCIEngine(conf["engine_path"], movetime_ms=100)
+    challenge_conf = conf.get("challenge", {})
+    eng = UCIEngine(conf["engine_path"], movetime_ms=conf.get("move_time_ms", 60))
+    max_takebacks = int(challenge_conf.get("max_takebacks", 0))
+    active_games = set()
+    active_games_lock = threading.Lock()
+
+    def get_active_games_count():
+        with active_games_lock:
+            return len(active_games)
+
+    def mark_game_finished(game_id):
+        with active_games_lock:
+            active_games.discard(game_id)
+
+    ch = ChallengeHandler(api, challenge_conf, active_games_getter=get_active_games_count)
 
     events = api.stream_events()
     for line in events.iter_lines():
@@ -217,7 +249,12 @@ def start():
             if event["type"] == "gameStart":
                 game_id = event["game"]["id"]
                 print(f"Game Detected: {game_id}")
-                threading.Thread(target=play_game, args=(game_id, api, conf["bot_name"], eng)).start()
+                with active_games_lock:
+                    active_games.add(game_id)
+                threading.Thread(
+                    target=play_game,
+                    args=(game_id, api, conf["bot_name"], eng, max_takebacks, mark_game_finished),
+                ).start()
 
 
 def run_upgrade():

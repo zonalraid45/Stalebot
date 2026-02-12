@@ -1,2 +1,40 @@
 bot_name: "Stalebot"
 engine_path: "./Engine/stockfish"
+move_time_ms: 60
+
+challenge:
+  concurrency: 1
+  max_takebacks: 3
+  bullet_with_increment_only: false
+  # min_increment: 0
+  # max_increment: 180
+  # min_initial: 0
+  # max_initial: 10800
+  variants:
+    - standard
+    - chess960
+    - fromPosition
+  # - antichess
+  # - atomic
+  # - crazyhouse
+  # - horde
+  # - kingOfTheHill
+  # - racingKings
+  # - threeCheck
+  bot_time_controls:
+    - bullet
+    - blitz
+    - rapid
+  # - classical
+  # - 25+0
+  human_time_controls:
+    - bullet
+    - blitz
+    - rapid
+    - classical
+  bot_modes:
+    # - casual
+    - rated
+  human_modes:
+    - casual
+    - rated
