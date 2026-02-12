@@ -1,6 +1,15 @@
 name: Lichess Bot
 on:
   workflow_dispatch:
+    inputs:
+      command:
+        description: "Command to run (run or upgrade)"
+        required: false
+        default: run
+        type: choice
+        options:
+          - run
+          - upgrade
   schedule:
     - cron: '0 */6 * * *'
 
@@ -20,4 +29,4 @@ jobs:
       - name: Run Bot
         env:
           STALE: ${{ secrets.STALE }}
-        run: python -u bot.py
+        run: python -u bot.py ${{ github.event.inputs.command || 'run' }}
