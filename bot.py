@@ -1,12 +1,9 @@
-import yaml
 import json
 import threading
-from api import LichessAPI
-from challenge import ChallengeHandler
-from Engine.engine import UCIEngine
+import sys
 
 def play_game(game_id, api, bot_name, engine):
-    print(f"DEBUG: Starting game loop for {game_id}")
+    print(f"Starting game loop for {game_id}")
     for line in api.stream_game(game_id).iter_lines():
         if line:
             data = json.loads(line.decode('utf-8'))
@@ -21,11 +18,16 @@ def play_game(game_id, api, bot_name, engine):
                 api.make_move(game_id, move)
 
 def start():
-    print("DEBUG: Loading settings.yml")
+    import yaml
+    from api import LichessAPI
+    from challenge import ChallengeHandler
+    from Engine.engine import UCIEngine
+
+    print("Loading settings.yml")
     with open("settings.yml", "r") as f:
         conf = yaml.safe_load(f)
     
-    print(f"DEBUG: Bot Name: {conf['bot_name']}")
+    print(f"Bot Name: {conf['bot_name']}")
     api = LichessAPI()
     ch = ChallengeHandler(api)
     eng = UCIEngine(conf["engine_path"])
@@ -37,10 +39,30 @@ def start():
             if "type" not in event:
                 continue
             
-            print(f"DEBUG: Received event type: {event['type']}")
+            print(f"Received event type: {event['type']}")
             ch.handle(event)
             if event["type"] == "gameStart":
                 threading.Thread(target=play_game, args=(event["game"]["id"], api, conf["bot_name"], eng)).start()
 
+def run_upgrade():
+    from api import LichessAPI
+
+    api = LichessAPI()
+    api.upgrade_account()
+
+
+def main():
+    command = sys.argv[1].strip().lower() if len(sys.argv) > 1 else "run"
+
+    if command in {"run", "start"}:
+        start()
+    elif command in {"upgrade", "!upgrade"}:
+        run_upgrade()
+    else:
+        print(f"Unknown command: {command}")
+        print("Usage: python -u bot.py [run|upgrade]")
+        sys.exit(2)
+
+
 if __name__ == "__main__":
-    start()
+    main()
