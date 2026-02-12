@@ -25,12 +25,24 @@ class LichessAPI:
         print(f"Accepting challenge {challenge_id}")
         requests.post(f"{self.base_url}/challenge/{challenge_id}/accept", headers=self.headers)
 
+    def decline_challenge(self, challenge_id, reason="generic"):
+        print(f"Declining challenge {challenge_id} ({reason})")
+        requests.post(
+            f"{self.base_url}/challenge/{challenge_id}/decline",
+            headers=self.headers,
+            data={"reason": reason},
+        )
+
     def make_move(self, game_id, move, move_number=None, side=None):
         if move_number is not None and side:
-            print(f"Move {move_number:>3} ({side}): {move} | game {game_id}")
-        else:
-            print(f"Submitting move {move} for game {game_id}")
+            print(f"Move {move_number:>3} ({side}): {move}     |     game {game_id}")
         requests.post(f"{self.base_url}/bot/game/{game_id}/move/{move}", headers=self.headers)
+
+    def respond_takeback(self, game_id, accept=True):
+        choice = "yes" if accept else "no"
+        action = "Accepting" if accept else "Declining"
+        print(f"{action} takeback     |     game {game_id}")
+        requests.post(f"{self.base_url}/bot/game/{game_id}/takeback/{choice}", headers=self.headers)
 
     def upgrade_account(self):
         print("Requesting bot account upgrade")
@@ -40,4 +52,3 @@ class LichessAPI:
         else:
             print(f"Upgrade request failed: {response.status_code} {response.text}")
             response.raise_for_status()
-
