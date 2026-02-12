@@ -1,7 +1,7 @@
 import subprocess
 
 class UCIEngine:
-    def __init__(self, engine_path, movetime_ms=100):
+    def __init__(self, engine_path, movetime_ms=100, uci_options=None):
         self.process = subprocess.Popen(
             engine_path,
             stdin=subprocess.PIPE,
@@ -10,7 +10,11 @@ class UCIEngine:
             bufsize=1
         )
         self.movetime_ms = movetime_ms
+        self.uci_options = uci_options or {}
+
         self.send("uci")
+        for option_name, option_value in self.uci_options.items():
+            self.send(f"setoption name {option_name} value {option_value}")
         self.send("isready")
 
     def send(self, cmd):
