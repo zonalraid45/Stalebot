@@ -3,6 +3,28 @@ import threading
 import sys
 
 
+def parse_time_multiplier(value):
+    if value is None:
+        return 0.0
+    if isinstance(value, (int, float)):
+        return float(value)
+
+    raw = str(value).strip().lower()
+    if raw.endswith("x"):
+        raw = raw[:-1].strip()
+
+    try:
+        return float(raw)
+    except ValueError:
+        return 0.0
+
+
+def compute_reserved_time_ms(initial_ms, time_multiplier):
+    if initial_ms is None or time_multiplier <= 0:
+        return 0
+    return max(0, int((initial_ms / 60000.0) * time_multiplier * 1000))
+
+
 def initial_board():
     board = {}
     for file_char in "abcdefgh":
@@ -135,7 +157,7 @@ def format_result(status, winner):
     return f"Game finished with status: {status}"
 
 
-def play_game(game_id, api, bot_name, engine, max_takebacks, on_game_finish=None):
+def play_game(game_id, api, bot_name, engine, max_takebacks, move_time_ms, time_multiplier, on_game_finish=None):
     print(f"Starting game loop for {game_id}")
     board = initial_board()
     processed_plies = 0
@@ -144,6 +166,7 @@ def play_game(game_id, api, bot_name, engine, max_takebacks, on_game_finish=None
     bot_is_white = None
     takebacks_accepted = 0
     takeback_offer_seen = False
+    initial_clock_ms = None
 
     try:
         for line in api.stream_game(game_id).iter_lines():
@@ -162,6 +185,8 @@ def play_game(game_id, api, bot_name, engine, max_takebacks, on_game_finish=None
                 opponent = black if bot_is_white else white
                 opponent_name = opponent.get("name") or opponent.get("id") or "unknown"
                 announced = True
+                clock = data.get("clock", {})
+                initial_clock_ms = clock.get("initial")
                 print(f"Game {game_id} ({opponent_name}) started")
 
             state = data.get("state", data)
@@ -194,15 +219,52 @@ def play_game(game_id, api, bot_name, engine, max_takebacks, on_game_finish=None
             else:
                 my_turn = (len(move_list) % 2 == 0) if bot_is_white else (len(move_list) % 2 != 0)
 
-            if state.get("status") != "started":
-                result = format_result(state.get("status", "finished"), state.get("winner"))
+            status = state.get("status", "started")
+            terminal_statuses = {
+                "aborted",
+                "mate",
+                "resign",
+                "stalemate",
+                "timeout",
+                "draw",
+                "outoftime",
+                "cheat",
+                "noStart",
+                "variantEnd",
+                "unknownFinish",
+            }
+            if status in terminal_statuses:
+                result = format_result(status, state.get("winner"))
                 if not announced:
                     print(f"Game {game_id} ({opponent_name})")
                 print(f"Result: game {game_id} ({opponent_name}): {result}")
                 break
 
+            if status != "started":
+                continue
+
             if my_turn:
-                move = engine.get_best_move(moves)
+                wtime = state.get("wtime")
+                btime = state.get("btime")
+                winc = state.get("winc")
+                binc = state.get("binc")
+
+                reserve_ms = compute_reserved_time_ms(initial_clock_ms, time_multiplier)
+                if bot_is_white is True and wtime is not None:
+                    wtime = max(0, int(wtime) - reserve_ms)
+                elif bot_is_white is False and btime is not None:
+                    btime = max(0, int(btime) - reserve_ms)
+
+                if wtime is not None and btime is not None:
+                    move = engine.get_best_move(
+                        moves,
+                        wtime=wtime,
+                        btime=btime,
+                        winc=winc,
+                        binc=binc,
+                    )
+                else:
+                    move = engine.get_best_move(moves, movetime_ms=move_time_ms)
                 api.make_move(game_id, move)
     finally:
         if on_game_finish is not None:
@@ -222,7 +284,13 @@ def start():
     print(f"Bot Name: {conf['bot_name']}")
     api = LichessAPI()
     challenge_conf = conf.get("challenge", {})
-    eng = UCIEngine(conf["engine_path"], movetime_ms=conf.get("move_time_ms", 60))
+    move_time_ms = int(conf.get("move_time_ms", 60))
+    time_multiplier = parse_time_multiplier(conf.get("timemultier", conf.get("time_multiplier", 0)))
+    eng = UCIEngine(
+        conf["engine_path"],
+        movetime_ms=move_time_ms,
+        uci_options=conf.get("uci_options", {}),
+    )
     max_takebacks = int(challenge_conf.get("max_takebacks", 0))
     active_games = set()
     active_games_lock = threading.Lock()
@@ -253,7 +321,16 @@ def start():
                     active_games.add(game_id)
                 threading.Thread(
                     target=play_game,
-                    args=(game_id, api, conf["bot_name"], eng, max_takebacks, mark_game_finished),
+                    args=(
+                        game_id,
+                        api,
+                        conf["bot_name"],
+                        eng,
+                        max_takebacks,
+                        move_time_ms,
+                        time_multiplier,
+                        mark_game_finished,
+                    ),
                 ).start()
 
 
