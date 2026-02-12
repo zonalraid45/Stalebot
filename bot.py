@@ -146,7 +146,7 @@ def play_game(game_id, api, bot_name, engine, max_takebacks, on_game_finish=None
     takeback_offer_seen = False
 
     try:
-        for line in api.stream_game(game_id).iter_lines():
+        for line in api.stream_game(game_id).iter_lines(chunk_size=1):
             if not line:
                 continue
 
@@ -238,7 +238,7 @@ def start():
     ch = ChallengeHandler(api, challenge_conf, active_games_getter=get_active_games_count)
 
     events = api.stream_events()
-    for line in events.iter_lines():
+    for line in events.iter_lines(chunk_size=1):
         if line:
             event = json.loads(line.decode("utf-8"))
             if "type" not in event:
