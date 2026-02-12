@@ -201,12 +201,29 @@ def play_game(game_id, api, bot_name, engine, max_takebacks, on_game_finish=None
             else:
                 my_turn = (len(move_list) % 2 == 0) if bot_is_white else (len(move_list) % 2 != 0)
 
-            if state.get("status") != "started":
-                result = format_result(state.get("status", "finished"), state.get("winner"))
+            status = state.get("status", "started")
+            terminal_statuses = {
+                "aborted",
+                "mate",
+                "resign",
+                "stalemate",
+                "timeout",
+                "draw",
+                "outoftime",
+                "cheat",
+                "noStart",
+                "variantEnd",
+                "unknownFinish",
+            }
+            if status in terminal_statuses:
+                result = format_result(status, state.get("winner"))
                 if not announced:
                     print(f"Game {game_id} ({opponent_name})")
                 print(f"Result: game {game_id} ({opponent_name}): {result}")
                 break
+
+            if status != "started":
+                continue
 
             if my_turn:
                 move = engine.get_best_move(moves)
