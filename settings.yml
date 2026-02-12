@@ -1,6 +1,6 @@
 bot_name: "Stalebot"
 engine_path: "./Engine/stockfish"
-move_time_ms: 30
+move_time_ms: 100
 
 uci_options:                          # Arbitrary UCI options passed to the engine.
   Threads: 4                          # Increased threads for Threadripper power.
