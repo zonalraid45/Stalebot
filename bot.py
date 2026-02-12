@@ -183,9 +183,16 @@ def play_game(game_id, api, bot_name, engine, max_takebacks, on_game_finish=None
 
             while processed_plies < len(move_list):
                 uci_move = move_list[processed_plies]
-                ply = processed_plies + 1
                 pretty = uci_to_pretty(uci_move, board)
-                print(f"{ply}.{pretty}     |     game {game_id} ({opponent_name})")
+
+                move_by_white = processed_plies % 2 == 0
+                fullmove_number = (processed_plies // 2) + 1
+                move_label = f"{fullmove_number}." if move_by_white else f"{fullmove_number}..."
+
+                is_engine_move = bot_is_white is not None and bot_is_white == move_by_white
+                move_prefix = "Engine" if is_engine_move else "Move"
+                print(f"{move_prefix}: {move_label} {pretty}     |     game {game_id} ({opponent_name})")
+
                 apply_uci_move(board, uci_move)
                 processed_plies += 1
 

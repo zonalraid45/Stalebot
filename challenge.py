@@ -99,8 +99,57 @@ class ChallengeHandler:
         if event.get("type") == "challenge":
             challenge = event["challenge"]
             challenge_id = challenge["id"]
+            print(self._format_challenge_line(challenge))
             should_accept, decline_reason = self.should_accept(challenge)
             if should_accept:
                 self.api.accept_challenge(challenge_id)
             else:
+                print(self._decline_log_message(decline_reason))
                 self.api.decline_challenge(challenge_id, reason=decline_reason or "generic")
+
+    def _format_challenge_line(self, challenge):
+        challenger = challenge.get("challenger", {})
+        challenger_name = challenger.get("name") or challenger.get("id") or "Unknown"
+        challenger_rating = challenger.get("rating")
+        if challenger_rating is not None:
+            challenger_text = f"{challenger_name} ({challenger_rating})"
+        else:
+            challenger_text = challenger_name
+
+        tc = challenge.get("timeControl", {})
+        tc_limit = tc.get("limit")
+        tc_increment = tc.get("increment")
+        if tc_limit is not None and tc_increment is not None:
+            tc_text = f"{int(tc_limit // 60)}+{tc_increment}"
+        else:
+            tc_text = challenge.get("speed") or "Unknown"
+
+        mode_text = "Rated" if challenge.get("rated", False) else "Casual"
+        color_text = (challenge.get("color") or "random").capitalize()
+
+        variant = challenge.get("variant", {})
+        variant_text = variant.get("name") or variant.get("key") or "Standard"
+
+        return (
+            f"ID: {challenge.get('id', 'Unknown')}     "
+            f"Challenger: {challenger_text}     "
+            f"TC: {tc_text}     "
+            f"{mode_text}     "
+            f"Color: {color_text}     "
+            f"Variant: {variant_text}"
+        )
+
+    def _decline_log_message(self, reason):
+        reason_messages = {
+            "rated": "Rated is not allowed according to config.",
+            "casual": "Casual is not allowed according to config.",
+            "variant": "Variant is not allowed according to config.",
+            "standard": "Standard is not allowed according to config.",
+            "timeControl": "Time control is not allowed according to config.",
+            "tooFast": "Time control is too fast according to config.",
+            "tooSlow": "Time control is too slow according to config.",
+            "later": "Challenge declined because the game limit is reached.",
+            "generic": "Challenge declined according to config.",
+            None: "Challenge declined according to config.",
+        }
+        return reason_messages.get(reason, f"Challenge declined: {reason}.")
