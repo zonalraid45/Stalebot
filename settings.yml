@@ -1,14 +1,12 @@
 bot_name: "Stalebot"
 engine_path: "./Engine/stockfish"
-move_time_ms: 100
-time_multiplier: 0
+move_time_ms: 160
+time_multiplier: 20
 blunder_guard_min_think_ms: 180
-blunder_guard_verify_ratio: 0.5
-blunder_guard_min_verify_ms: 120
 
-uci_options:                          # Arbitrary UCI options passed to the engine.
-  Threads: 4                          # Increased threads for Threadripper power.
-  Hash: 2508                          # Increased hash for better position evaluation.
+uci_options:
+  Threads: 4
+  Hash: 2508
   Move Overhead: 100
 
 challenge:
