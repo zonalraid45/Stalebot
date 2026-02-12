@@ -1,7 +1,7 @@
 import subprocess
 
 class UCIEngine:
-    def __init__(self, engine_path):
+    def __init__(self, engine_path, movetime_ms=100):
         self.process = subprocess.Popen(
             engine_path,
             stdin=subprocess.PIPE,
@@ -9,6 +9,7 @@ class UCIEngine:
             text=True,
             bufsize=1
         )
+        self.movetime_ms = movetime_ms
         self.send("uci")
         self.send("isready")
 
@@ -21,7 +22,7 @@ class UCIEngine:
             self.send(f"position startpos moves {moves_str}")
         else:
             self.send("position startpos")
-        self.send("go movetime 1000")
+        self.send(f"go movetime {self.movetime_ms}")
         while True:
             line = self.process.stdout.readline()
             if "bestmove" in line:
