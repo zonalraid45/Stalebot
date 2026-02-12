@@ -135,7 +135,51 @@ def format_result(status, winner):
     return f"Game finished with status: {status}"
 
 
-def play_game(game_id, api, bot_name, engine, max_takebacks, on_game_finish=None):
+def calculate_think_budget(state, bot_is_white, base_move_time_ms, time_multiplier=0, initial_limit_ms=None, blunder_guard_min_think_ms=0):
+    """Compute safe think budget from remaining clock and virtual time penalty settings."""
+    if bot_is_white is None:
+        fallback = max(1, int(base_move_time_ms))
+        return fallback, fallback
+
+    remaining_ms = state.get("wtime") if bot_is_white else state.get("btime")
+    increment_ms = state.get("winc") if bot_is_white else state.get("binc")
+
+    if remaining_ms is None:
+        fallback = max(1, int(base_move_time_ms))
+        return fallback, fallback
+
+    virtual_penalty_ms = 0
+    if initial_limit_ms is not None and time_multiplier:
+        initial_minutes = max(0, int(initial_limit_ms) // 60000)
+        virtual_penalty_ms = int(initial_minutes * float(time_multiplier) * 1000)
+
+    effective_remaining_ms = max(1, int(remaining_ms) - virtual_penalty_ms)
+
+    desired_ms = int(base_move_time_ms)
+    if blunder_guard_min_think_ms:
+        desired_ms = max(desired_ms, int(blunder_guard_min_think_ms))
+
+    # Keep enough time for future moves; use increment as reusable budget when available.
+    reserve_ms = max(150, int(increment_ms or 0))
+    safe_budget_ms = max(1, effective_remaining_ms - reserve_ms)
+
+    think_time_ms = max(1, min(desired_ms, safe_budget_ms))
+    return think_time_ms, safe_budget_ms
+
+
+def play_game(
+    game_id,
+    api,
+    bot_name,
+    engine,
+    max_takebacks,
+    on_game_finish=None,
+    base_move_time_ms=100,
+    time_multiplier=0,
+    blunder_guard_min_think_ms=0,
+    blunder_guard_verify_ratio=0.0,
+    blunder_guard_min_verify_ms=100,
+):
     print(f"Starting game loop for {game_id}")
     board = initial_board()
     processed_plies = 0
@@ -144,6 +188,7 @@ def play_game(game_id, api, bot_name, engine, max_takebacks, on_game_finish=None
     bot_is_white = None
     takebacks_accepted = 0
     takeback_offer_seen = False
+    initial_limit_ms = None
 
     try:
         for line in api.stream_game(game_id).iter_lines(chunk_size=1):
@@ -162,6 +207,8 @@ def play_game(game_id, api, bot_name, engine, max_takebacks, on_game_finish=None
                 opponent = black if bot_is_white else white
                 opponent_name = opponent.get("name") or opponent.get("id") or "unknown"
                 announced = True
+                clock = data.get("clock", {})
+                initial_limit_ms = clock.get("initial")
                 print(f"Game {game_id} ({opponent_name}) started")
 
             state = data.get("state", data)
@@ -226,7 +273,29 @@ def play_game(game_id, api, bot_name, engine, max_takebacks, on_game_finish=None
                 continue
 
             if my_turn:
-                move = engine.get_best_move(moves)
+                think_time_ms, safe_budget_ms = calculate_think_budget(
+                    state,
+                    bot_is_white,
+                    base_move_time_ms,
+                    time_multiplier=time_multiplier,
+                    initial_limit_ms=initial_limit_ms,
+                    blunder_guard_min_think_ms=blunder_guard_min_think_ms,
+                )
+                move = engine.get_best_move(moves, movetime_ms=think_time_ms)
+
+                if blunder_guard_verify_ratio > 0:
+                    extra_budget_ms = max(0, safe_budget_ms - think_time_ms)
+                    verify_ms = int(think_time_ms * blunder_guard_verify_ratio)
+                    verify_ms = max(int(blunder_guard_min_verify_ms), verify_ms)
+                    verify_ms = min(verify_ms, extra_budget_ms)
+                    if verify_ms > 0:
+                        verified_move = engine.get_best_move(moves, movetime_ms=verify_ms)
+                        if verified_move != move:
+                            print(
+                                f"Blunder guard override: {move} -> {verified_move} (verify {verify_ms}ms)     |     game {game_id}"
+                            )
+                            move = verified_move
+
                 api.make_move(game_id, move)
     finally:
         if on_game_finish is not None:
@@ -246,9 +315,17 @@ def start():
     print(f"Bot Name: {conf['bot_name']}")
     api = LichessAPI()
     challenge_conf = conf.get("challenge", {})
+    base_move_time_ms = int(conf.get("move_time_ms", 60))
+    time_multiplier = float(
+        conf.get("time_multiplier", conf.get("timemultier", conf.get("timemuliter", 0)))
+    )
+    blunder_guard_min_think_ms = int(conf.get("blunder_guard_min_think_ms", 0))
+    blunder_guard_verify_ratio = float(conf.get("blunder_guard_verify_ratio", 0))
+    blunder_guard_min_verify_ms = int(conf.get("blunder_guard_min_verify_ms", 100))
+
     eng = UCIEngine(
         conf["engine_path"],
-        movetime_ms=conf.get("move_time_ms", 60),
+        movetime_ms=base_move_time_ms,
         uci_options=conf.get("uci_options", {}),
     )
     max_takebacks = int(challenge_conf.get("max_takebacks", 0))
@@ -281,7 +358,19 @@ def start():
                     active_games.add(game_id)
                 threading.Thread(
                     target=play_game,
-                    args=(game_id, api, conf["bot_name"], eng, max_takebacks, mark_game_finished),
+                    args=(
+                        game_id,
+                        api,
+                        conf["bot_name"],
+                        eng,
+                        max_takebacks,
+                        mark_game_finished,
+                        base_move_time_ms,
+                        time_multiplier,
+                        blunder_guard_min_think_ms,
+                        blunder_guard_verify_ratio,
+                        blunder_guard_min_verify_ms,
+                    ),
                 ).start()
 
 

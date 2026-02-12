@@ -21,12 +21,13 @@ class UCIEngine:
         self.process.stdin.write(f"{cmd}\n")
         self.process.stdin.flush()
 
-    def get_best_move(self, moves_str):
+    def get_best_move(self, moves_str, movetime_ms=None):
         if moves_str:
             self.send(f"position startpos moves {moves_str}")
         else:
             self.send("position startpos")
-        self.send(f"go movetime {self.movetime_ms}")
+        think_time = self.movetime_ms if movetime_ms is None else max(1, int(movetime_ms))
+        self.send(f"go movetime {think_time}")
         while True:
             line = self.process.stdout.readline()
             if "bestmove" in line:
