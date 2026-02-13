@@ -19,6 +19,11 @@ class LichessAPI:
         print("Connecting to event stream...")
         return self.session.get(f"{self.base_url}/stream/event", headers=self.headers, stream=True)
 
+    def get_account_name(self):
+        response = self.session.get(f"{self.base_url}/account", headers=self.headers)
+        response.raise_for_status()
+        return response.json().get("username")
+
     def stream_game(self, game_id):
         print(f"Streaming game {game_id}")
         return self.session.get(f"{self.base_url}/bot/game/stream/{game_id}", headers=self.headers, stream=True)

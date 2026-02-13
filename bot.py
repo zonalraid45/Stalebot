@@ -267,6 +267,9 @@ def play_game(game_id, api, bot_name, engine, max_takebacks, on_game_finish=None
                     blunder_guard_min_think_ms=blunder_guard_min_think_ms,
                 )
                 move = engine.get_best_move(moves, movetime_ms=think_time_ms)
+                if not move or move == "(none)":
+                    print(f"No legal move found by engine for game {game_id}; skipping move submit")
+                    continue
                 api.make_move(game_id, move)
     finally:
         if on_game_finish is not None:
@@ -283,8 +286,10 @@ def start():
     with open("settings.yml", "r") as f:
         conf = yaml.safe_load(f)
 
-    print(f"Bot Name: {conf['bot_name']}")
+    print(f"Bot Name (config): {conf['bot_name']}")
     api = LichessAPI()
+    account_name = api.get_account_name() or conf["bot_name"]
+    print(f"Bot Name (account): {account_name}")
     challenge_conf = conf.get("challenge", {})
     base_move_time_ms = int(conf.get("move_time_ms", 60))
     time_multiplier = float(
@@ -330,7 +335,7 @@ def start():
                     args=(
                         game_id,
                         api,
-                        conf["bot_name"],
+                        account_name,
                         eng,
                         max_takebacks,
                         mark_game_finished,
